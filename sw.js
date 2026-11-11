@@ -1,5 +1,5 @@
 // Keeps ColorNotes working with no internet. Change the version when files change.
-const CACHE = 'colornotes-v1';
+const CACHE = 'colornotes-v3';
 const FILES = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {

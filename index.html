@@ -298,31 +298,49 @@ function openEditor(kind, note, date, swap) {
   (swap ? swapLayer : openLayer)('editor', closeEditor);
   setTimeout(() => (note ? $('eBody') : $('eTitle')).focus(), 50);
 }
-function closeEditor() {
-  const { kind, note } = ed, list = store[kind];
+// Saves the open note. Runs while typing (final=false) and on close (final=true).
+// An empty note is only removed on close, so autosave never deletes anything.
+function commitEditor(final) {
+  clearTimeout(autoTimer);
+  if (!ed) return;
+  const { kind } = ed, list = store[kind];
   const title = $('eTitle').value.trim(), body = $('eBody').value;
-  if (ed.deleted || (!title && !body.trim())) {
-    if (note) list.splice(list.indexOf(note), 1);
-  } else if (note) {
-    if (note.title !== title || note.body !== body || note.color !== ed.color || note.date !== ed.date) Object.assign(note, { title, body, color: ed.color, date: ed.date, mod: Date.now() });
-  } else {
-    list.push({ id: crypto.randomUUID?.() || String(Date.now()), title, body, color: ed.color, date: ed.date, created: Date.now(), mod: Date.now() });
-  }
-  save(kind); renderAll(); document.activeElement.blur();
+  const empty = !title && !body.trim();
+  if (final && (ed.deleted || empty)) {
+    const i = list.indexOf(ed.note);
+    if (i >= 0) list.splice(i, 1);
+  } else if (!empty) {
+    const n = ed.note;
+    if (!n) {
+      ed.note = { id: crypto.randomUUID?.() || String(Date.now()), title, body, color: ed.color, date: ed.date, created: Date.now(), mod: Date.now() };
+      list.push(ed.note);
+    } else if (n.title !== title || n.body !== body || n.color !== ed.color || n.date !== ed.date) {
+      Object.assign(n, { title, body, color: ed.color, date: ed.date, mod: Date.now() });
+    } else return;
+  } else return;
+  save(kind);
 }
+let autoTimer;
+const autosave = () => { clearTimeout(autoTimer); autoTimer = setTimeout(() => commitEditor(false), 400); };
+$('eTitle').addEventListener('input', autosave);
+$('eBody').addEventListener('input', autosave);
+// Phone locked, app switched or closed: save immediately
+addEventListener('visibilitychange', () => { if (document.hidden) commitEditor(false); });
+addEventListener('pagehide', () => commitEditor(false));
+function closeEditor() { commitEditor(true); ed = null; renderAll(); document.activeElement.blur(); }
 $('eDone').onclick = closeTop;
 $('eMore').onclick = () => { $('eMenu').hidden = !$('eMenu').hidden; };
 $('eDelete').onclick = () => { if (confirm('Delete this note?')) { ed.deleted = true; closeTop(); } else $('eMenu').hidden = true; };
 $('eDate').onclick = () => {
   const p = $('datePick'), prev = p.onchange;
   p.value = ed.date;
-  p.onchange = e => { if (e.target.value) { ed.date = e.target.value; $('eDateTxt').textContent = ed.date; } p.onchange = prev; };
+  p.onchange = e => { if (e.target.value) { ed.date = e.target.value; $('eDateTxt').textContent = ed.date; commitEditor(false); } p.onchange = prev; };
   try { p.showPicker(); } catch { p.onchange = prev; }
 };
 for (const [name, block] of COLORS) {
   const b = document.createElement('button');
   b.style.background = block; b.dataset.c = name; b.setAttribute('aria-label', name);
-  b.onclick = () => { ed.color = name; paintEditor(); closeTop(); };
+  b.onclick = () => { ed.color = name; paintEditor(); commitEditor(false); closeTop(); };
   $('swatches').append(b);
 }
 $('eColor').onclick = () => {
@@ -359,6 +377,8 @@ requestAnimationFrame(() => { if (startTab === 'cal') pager.scrollLeft = pager.c
 
 // Offline support + "Add to Home screen" app install
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+// Ask the browser never to clear our saved notes when the phone is low on space
+navigator.storage?.persist?.().catch(() => {});
 </script>
 </body>
 </html>
